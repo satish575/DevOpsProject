@@ -1,0 +1,99 @@
+---
+- name: Deploy Node.js App using Docker Compose
+  hosts: target
+  become: yes
+
+  vars:
+    app_dir: "/home/ubuntu/devops-project"
+
+  tasks:
+    - name: Install prerequisite packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - gnupg-agent
+        state: present
+        update_cache: yes
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+        state: present
+        filename: docker
+
+    - name: Update apt cache after adding Docker repo
+      apt:
+        update_cache: yes
+
+    - name: Install Docker Engine
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+
+    - name: Ensure Docker service is running
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Install pip for python3 (required for docker-compose installation)
+      apt:
+        name: python3-pip
+        state: present
+
+    - name: Install Docker Compose using pip
+      pip:
+        name: docker-compose
+        executable: pip3
+
+    # Optional: add current user (ubuntu) to docker group for permission to run docker without sudo
+    - name: Add ubuntu user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Ensure app directory exists
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+
+    - name: Remove old content in the app directory
+      file:
+        path: "{{ app_dir }}"
+        state: absent
+      ignore_errors: yes
+
+    - name: Recreate app directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+
+    - name: Copy project files to remote server
+      synchronize:
+        src: "./"
+        dest: "{{ app_dir }}"
+        delete: yes
+        recursive: yes
+
+    - name: Stop and remove old containers
+      command: docker compose down
+      args:
+        chdir: "{{ app_dir }}"
+      ignore_errors: yes
+
+    - name: Build and start Docker containers
+      command: docker compose up -d --build
+      args:
+        chdir: "{{ app_dir }}"
